@@ -234,6 +234,11 @@ be used (for development purposes only; please ignore).
 whether or not to use Nelder-Mead optimisation. Defaults to
 \code{FALSE}, which is recommended.
 
+  \item \code{ad}: Optional. A logical specifying whether or not to
+maximise the log-likelihood using ADMB. Defaults to \code{TRUE},
+unless a first-call model is being fitted. If \code{FALSE}, all
+other elements in \code{optim.opts} are ignored.
+
 }
 }
 

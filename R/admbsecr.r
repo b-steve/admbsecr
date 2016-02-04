@@ -137,6 +137,11 @@
 #' whether or not to use Nelder-Mead optimisation. Defaults to
 #' \code{FALSE}, which is recommended.
 #'
+#'   \item \code{ad}: Optional. A logical specifying whether or not to
+#' maximise the log-likelihood using ADMB. Defaults to \code{TRUE},
+#' unless a first-call model is being fitted. If \code{FALSE}, all
+#' other elements in \code{optim.opts} are ignored.
+#'
 #' }
 #'
 #' @section Fitted parameters:
@@ -453,6 +458,7 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
     gbs <- optim.opts$gbs
     exe.type <- optim.opts$exe.type
     neld.mead <- optim.opts$neld.mead
+    ad <- optim.opts$ad
     if (is.null(exe.type)){
         exe.type <- "old"
     }
@@ -461,6 +467,9 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
         neld.mead.force <- FALSE
     } else {
         neld.mead.force <- TRUE
+    }
+    if (is.null(ad)){
+        ad <- TRUE
     }
     ## Setting up first.calls indicator.
     first.calls <- FALSE
@@ -996,11 +1005,19 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
     }
     ## Using optimx() for first call fits.
     if (first.calls){
-        ## All possible capture histories.
+        ad <- FALSE
+    }
+    if (!ad){
         n.combins <- 2^n.traps
-        combins <- matrix(NA, nrow = n.combins, ncol = n.traps)
-        for (i in 1:n.traps){
-            combins[, i] <- rep(rep(c(0, 1), each = 2^(n.traps - i)), times = 2^(i - 1))
+        ## All possible capture histories.
+        if (first.calls){
+            combins <- matrix(NA, nrow = n.combins, ncol = n.traps)
+            for (i in 1:n.traps){
+                combins[, i] <- rep(rep(c(0, 1), each = 2^(n.traps - i)), times = 2^(i - 1))
+            }
+        } else {
+            ## Creating this for consistency with C++ code.
+            combins <- matrix(0, nrow = n.combins, ncol = n.traps)
         }
         data.list$combins <- combins
         fit <- optimx(c(sv.link[c("D", "b0.ss", "b1.ss", "sigma.ss")], recursive = TRUE),

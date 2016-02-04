@@ -83,14 +83,15 @@ BEGIN_RCPP
 END_RCPP
 }
 // calc_probsurf
-List calc_probsurf(const NumericVector& link_pars, const List& dat);
-RcppExport SEXP admbsecr_calc_probsurf(SEXP link_parsSEXP, SEXP datSEXP) {
+List calc_probsurf(const NumericVector& link_pars, const List& dat, const bool& first_calls);
+RcppExport SEXP admbsecr_calc_probsurf(SEXP link_parsSEXP, SEXP datSEXP, SEXP first_callsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject __result;
     Rcpp::RNGScope __rngScope;
     Rcpp::traits::input_parameter< const NumericVector& >::type link_pars(link_parsSEXP);
     Rcpp::traits::input_parameter< const List& >::type dat(datSEXP);
-    __result = Rcpp::wrap(calc_probsurf(link_pars, dat));
+    Rcpp::traits::input_parameter< const bool& >::type first_calls(first_callsSEXP);
+    __result = Rcpp::wrap(calc_probsurf(link_pars, dat, first_calls));
     return __result;
 END_RCPP
 }

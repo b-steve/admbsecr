@@ -16,7 +16,7 @@ double log_dpois (const double x, const double lambda, const double dbl_min)
 }
 
 // Prototype for calc_detsurf.
-List calc_probsurf(const NumericVector&, const List&);
+List calc_probsurf(const NumericVector&, const List&, const bool&);
 
 //' Evaluating the likelihood using C++
 //'
@@ -39,6 +39,7 @@ double secr_nll(const NumericVector& link_pars, const List& dat, const bool& get
   int n = as<int>(dat["n"]);
   int n_traps = as<int>(dat["n_traps"]);
   int n_mask = as<int>(dat["n_mask"]);
+  bool first_calls = as<bool>(dat["first_calls"]);
   IntegerMatrix capt_bin_unique = as<IntegerMatrix>(dat["capt_bin_unique"]);
   IntegerVector capt_bin_freqs = as<IntegerVector>(dat["capt_bin_freqs"]);
   double cutoff = as<double>(dat["cutoff"]);
@@ -62,7 +63,7 @@ double secr_nll(const NumericVector& link_pars, const List& dat, const bool& get
   NumericMatrix expected_ss(n_traps, n_mask);
   NumericMatrix log_capt_probs(n_traps, n_mask);
   NumericMatrix log_evade_probs(n_traps, n_mask);
-  List l_out = calc_probsurf(link_pars, dat);
+  List l_out = calc_probsurf(link_pars, dat, first_calls);
   log_mask_det_probs = as<NumericVector>(l_out["log_p"]);
   mask_det_probs = exp(log_mask_det_probs);
   mask_all_det_probs = mask_det_probs + exp(as<NumericVector>(l_out["log_s"]));
@@ -126,11 +127,8 @@ double secr_nll(const NumericVector& link_pars, const List& dat, const bool& get
 }
 
 // [[Rcpp::export]]
-List calc_probsurf(const NumericVector& link_pars, const List& dat)
+List calc_probsurf(const NumericVector& link_pars, const List& dat, const bool& first_calls)
 {
-  double b0_ss = exp(link_pars[1]);
-  double b1_ss = exp(link_pars[2]);
-  double sigma_ss = exp(link_pars[3]);
   int n_mask = as<int>(dat["n_mask"]);
   int n_traps = as<int>(dat["n_traps"]);
   NumericVector cutoff = as<NumericVector>(dat["cutoff"]);
@@ -141,67 +139,77 @@ List calc_probsurf(const NumericVector& link_pars, const List& dat)
   NumericMatrix log_p_al(n_traps, n_mask);
   NumericMatrix log_p_bu(n_traps, n_mask);
   NumericMatrix log_p_bl(n_traps, n_mask);
+  NumericVector log_p;
+  NumericVector log_s;
   double mu_ss;
   int i, j, k;
-  // Calculating detection probabilities at upper and lower cutoff for
-  // each mask point at each trap.
-  for (i = 0; i < n_mask; i++){
-    for (j = 0; j < n_traps; j++){
-      mu_ss = b0_ss - b1_ss*dists(j, i);
-      expected_ss(j, i) = mu_ss;
-      log_p_au(j, i) = pnorm(cutoff, mu_ss, sigma_ss, false, true)[0];
-      log_p_al(j, i) = pnorm(lower_cutoff, mu_ss, sigma_ss, false, true)[0];
-      log_p_bu(j, i) = pnorm(cutoff, mu_ss, sigma_ss, true, true)[0];
-      log_p_bl(j, i) = pnorm(lower_cutoff, mu_ss, sigma_ss, true, true)[0];
-    }
-  }
-  NumericMatrix combins = as<NumericMatrix>(dat["combins"]);
-  int n_combins = combins.nrow();
-  NumericVector log_AU(n_mask);
-  NumericVector log_BU(n_mask);
-  NumericVector log_AL(n_mask);
-  NumericVector log_BL(n_mask);
-  double AU;
-  double AL;
-  double log_prob_au;
-  double log_prob_al;
-  // Calculating p and s for each mask point.
-  for (i = 0; i < n_mask; i++){
-    AU = 0;
-    AL = 0;
-    for (j = 1; j < n_combins; j++){
-      log_prob_au = 0;
-      log_prob_al = 0;
-      for (k = 0; k < n_traps; k++){
-	if (combins(j, k) == 1){
-	  log_prob_au += log_p_au(k, i);
-	  log_prob_al += log_p_al(k, i);
-	} else {
-	  log_prob_au += log_p_bu(k, i);
-	  log_prob_al += log_p_bl(k, i);
-	}
+  if (!first_calls){
+    // Stuff in here.
+    // Ensure log(mask_all_det_probs + dbl_min) = log(mask_det_probs + dbl_min))).
+    // Equivalent to log_s = 0?
+  } else {
+    double b0_ss = exp(link_pars[1]);
+    double b1_ss = exp(link_pars[2]);
+    double sigma_ss = exp(link_pars[3]);
+    // Calculating detection probabilities at upper and lower cutoff for
+    // each mask point at each trap.
+    for (i = 0; i < n_mask; i++){
+      for (j = 0; j < n_traps; j++){
+	mu_ss = b0_ss - b1_ss*dists(j, i);
+	expected_ss(j, i) = mu_ss;
+	log_p_au(j, i) = pnorm(cutoff, mu_ss, sigma_ss, false, true)[0];
+	log_p_bu(j, i) = pnorm(cutoff, mu_ss, sigma_ss, true, true)[0];
+	log_p_al(j, i) = pnorm(lower_cutoff, mu_ss, sigma_ss, false, true)[0];
+	log_p_bl(j, i) = pnorm(lower_cutoff, mu_ss, sigma_ss, true, true)[0];
       }
-      AU += exp(log_prob_au);
-      AL += exp(log_prob_al);
     }
-    // Fudge to prevent likelihood going to NaN; valid as
-    // lim_{x -> Inf} s.(x) = 0
-    // (so long as limit has ~converged before numerical instability).
-    if (AL == 0){
-      AL = DBL_MIN;
+    NumericMatrix combins = as<NumericMatrix>(dat["combins"]);
+    int n_combins = combins.nrow();
+    NumericVector log_AU(n_mask);
+    NumericVector log_BU(n_mask);
+    NumericVector log_AL(n_mask);
+    NumericVector log_BL(n_mask);
+    double AU;
+    double AL;
+    double log_prob_au;
+    double log_prob_al;
+    // Calculating p and s for each mask point.
+    for (i = 0; i < n_mask; i++){
+      AU = 0;
+      AL = 0;
+      for (j = 1; j < n_combins; j++){
+	log_prob_au = 0;
+	log_prob_al = 0;
+	for (k = 0; k < n_traps; k++){
+	  if (combins(j, k) == 1){
+	    log_prob_au += log_p_au(k, i);
+	    log_prob_al += log_p_al(k, i);
+	  } else {
+	    log_prob_au += log_p_bu(k, i);
+	    log_prob_al += log_p_bl(k, i);
+	  }
+	}
+	AU += exp(log_prob_au);
+	AL += exp(log_prob_al);
+      }
+      // Fudge to prevent likelihood going to NaN; valid as
+      // lim_{x -> Inf} s.(x) = 0
+      // (so long as limit has ~converged before numerical instability).
+      if (AL == 0){
+	AL = DBL_MIN;
+      }
+      log_AU(i) = log(AU);
+      log_AL(i) = log(AL);
+      log_BU(i) = 0;
+      log_BL(i) = 0;
+      for (k = 0; k < n_traps; k++){
+	log_BU(i) += log_p_bu(k, i);
+	log_BL(i) += log_p_bl(k, i);
+      }
     }
-    log_AU(i) = log(AU);
-    log_AL(i) = log(AL);
-    log_BU(i) = 0;
-    log_BL(i) = 0;
-    for (k = 0; k < n_traps; k++){
-      log_BU(i) += log_p_bu(k, i);
-      log_BL(i) += log_p_bl(k, i);
-    }
-    
+    log_p = log_AU;
+    log_s = log_AU + log_BL - log_AL;
   }
-  NumericVector log_p = log_AU;
-  NumericVector log_s = log_AU + log_BL - log_AL;
   List out;
   out["log_p"] = log_p;
   out["log_s"] = log_s;

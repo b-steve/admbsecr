@@ -55,7 +55,6 @@ double secr_nll(const NumericVector& link_pars, const List& dat, const bool& get
   double dbl_min = as<double>(dat["DBL_MIN"]);
   int i, j;
   double sum_det_probs = 0;
-  double sum_sub_det_probs = 0;
   NumericVector mask_det_probs(n_mask);
   NumericVector log_mask_det_probs(n_mask);
   NumericVector mask_all_det_probs(n_mask);
@@ -64,14 +63,18 @@ double secr_nll(const NumericVector& link_pars, const List& dat, const bool& get
   NumericMatrix log_capt_probs(n_traps, n_mask);
   NumericMatrix log_evade_probs(n_traps, n_mask);
   List l_out = calc_probsurf(link_pars, dat, first_calls);
-  log_mask_det_probs = as<NumericVector>(l_out["log_p"]);
-  mask_det_probs = exp(log_mask_det_probs);
+  // Detection probabilities at each mask point.
+  mask_det_probs = exp(as<NumericVector>(l_out["log_p"]));
+  if (first_calls){
+    mask_det_probs += exp(as<NumericVector>(l_out["log_s"]));
+  }
+  // Need to get rid of this line.
   mask_all_det_probs = mask_det_probs + exp(as<NumericVector>(l_out["log_s"]));
+  //
   expected_ss = as<NumericMatrix>(l_out["expected_ss"]);
   log_capt_probs = as<NumericMatrix>(l_out["log_capt_probs"]);
   log_evade_probs = as<NumericMatrix>(l_out["log_evade_probs"]);
-  sum_det_probs = sum(exp(log_mask_det_probs));
-  sum_sub_det_probs = sum(exp(as<NumericVector>(l_out["log_s"])));
+  sum_det_probs = sum(mask_det_probs);
   NumericVector capt_hist(n_traps);
   NumericVector evade_contrib(n_mask);
   NumericVector bincapt_contrib(n_mask);
@@ -109,13 +112,17 @@ double secr_nll(const NumericVector& link_pars, const List& dat, const bool& get
 	  }
 	}
       }
-      f_ind = sum(exp(bincapt_contrib + log(mask_all_det_probs + dbl_min) - log(mask_det_probs + dbl_min)));
+      if (first_call){
+	f_ind = sum(exp(bincapt_contrib + log(mask_det_probs + dbl_min) - as<NumericVector>(l_out["log_p"])));
+      } else {
+	f_ind = sum(exp(bincapt_contrib));
+      }
       f -= log(f_ind + dbl_min);
     }
   }
-  double esa = A*(sum_det_probs + sum_sub_det_probs);
+  double esa = A*(sum_det_probs);
   f -= log_dpois(n, D*esa, dbl_min);
-  f -= -n*log(sum_det_probs + sum_sub_det_probs);
+  f -= -n*log(sum_det_probs);
   if (trace){
     Rcout << "D: " << D << ", b0.ss: " << b0_ss << ", b1.ss: " << b1_ss << ", sigma.ss: " << sigma_ss << ", LL: " << -f << endl;
   }

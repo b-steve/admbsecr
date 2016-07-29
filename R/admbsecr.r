@@ -658,7 +658,7 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
                 fix$sigma.b0.ss <- NULL
             }
             if (warn.het){
-                warning("As the 'het.source' component of 'ss.opts' is FALSE, the values of the parameter sigma.b0.ss in 'sv' and 'fix' are being ignored")      
+                warning("As the 'het.source' component of 'ss.opts' is FALSE, the values of the parameter sigma.b0.ss in 'sv' and 'fix' are being ignored")
             }
             fix$sigma.b0.ss <- 0
         }
@@ -742,6 +742,25 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
         linkfn.id <- 4
     }
     detfns <- c("hn", "hr", "th", "lth", "ss", "log.ss", "spherical.ss")
+    ## Density parameters.
+    ## Placeholder for the model matrix.
+    D.model.matrix <- cbind(rep(1, n.mask),
+                              rep(0, n.mask),
+                              rep(0, n.mask))
+    n.Dpars <- ncol(D.model.matrix)
+    ## Checking for sensible model matrix.
+    if (diff(range(D.model.matrix)) == 0){
+        if (D.model.matrix != 1){
+            warning("Values in model matrix are all the same; fitting constant density model.")
+            D.model.matrix <- cbind(rep(1, n.mask))
+            n.Dpars <- 1
+        }
+        homogeneous.D <- TRUE
+        Dpar.names <- "D"
+    } else {
+        homogeneous.D <- FALSE
+        Dpar.names <- paste("D", 1:n.Dpars - 1, sep = ".")
+    }
     ## Sets detection function ID number for use in ADMB:
     ## 1 = Half normal
     ## 2 = Hazard rate
@@ -758,7 +777,7 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
                            ss = c("b0.ss", "b1.ss", "b2.ss", "sigma.b0.ss", "sigma.ss"),
                            log.ss = c("b0.ss", "b1.ss", "b2.ss", "sigma.b0.ss", "sigma.ss"),
                            spherical.ss = c("b0.ss", "b1.ss", "b2.ss", "sigma.b0.ss", "sigma.ss"))
-    par.names <- c("D", detpar.names, suppar.names)
+    par.names <- c(Dpar.names, detpar.names, suppar.names)
     n.detpars <- length(detpar.names)
     n.suppars <- length(suppar.names)
     any.suppars <- n.suppars > 0
@@ -780,7 +799,7 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
     ## 1 = identity
     ## 2 = log
     ## 3 = logit
-    links <- list(D = 2,
+    links <- list(D = 1,
                   g0 = 3,
                   sigma = 2,
                   shape = 1,
@@ -826,7 +845,6 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
         sv.link[[i]] <- link.list[[links[[i]]]](sv.link[[i]])
     }
     ## Sorting out phases.
-    ## TODO: Add phases parameter so that these can be controlled by user.
     phases.save <- phases
     phases <- vector("list", length = n.pars)
     names(phases) <- par.names
@@ -842,7 +860,7 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
             }
         }
     }
-    D.phase <- phases[["D"]]
+    Dpars.phase <- c(phases[Dpar.names], recursive = TRUE)
     detpars.phase <- c(phases[detpar.names], recursive = TRUE)
     if (any.suppars){
         suppars.phase <- c(phases[suppar.names], recursive = TRUE)
@@ -880,8 +898,8 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
         bounds.link[[i]] <- link.list[[links[[i]]]](bounds[[i]])
     }
     D.bounds <- bounds.link[["D"]]
-    D.lb <- D.bounds[1]
-    D.ub <- D.bounds[2]
+    Dpars.lb <- rep(-1000, n.Dpars)
+    Dpars.ub <- rep(1000, n.Dpars)
     detpar.bounds <- bounds.link[detpar.names]
     detpars.lb <- sapply(detpar.bounds, function(x) x[1])
     detpars.ub <- sapply(detpar.bounds, function(x) x[2])
@@ -915,7 +933,7 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
     }
     ## Replacing infinite scalefactors.
     sf[!is.finite(sf)] <- 1
-    D.sf <- sf[["D"]]
+    Dpars.sf <- sf[[substr(names(sf), 1, 1) == "D"]]
     detpars.sf <- c(sf[detpar.names], recursive = TRUE)
     if (any.suppars){
         suppars.sf <- c(sf[suppar.names], recursive = TRUE)
@@ -998,30 +1016,63 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
         }
     }
     ## Stuff for the .dat file.
-    data.list <- list(
-        n_unique = n.unique, local = as.numeric(local), all_n_local = all.n.local,
-        all_which_local = all.which.local, D_lb = D.lb, D_ub = D.ub, D_phase =
-        D.phase, D_sf = D.sf, n_detpars = n.detpars, detpars_lb = detpars.lb,
-        detpars_ub = detpars.ub, detpars_phase = detpars.phase, detpars_sf =
-        detpars.sf, detpars_linkfns = detpars.link, n_suppars = n.suppars,
-        suppars_lb = suppars.lb, suppars_ub = suppars.ub, suppars_phase =
-        suppars.phase, suppars_sf = suppars.sf, suppars_linkfns =
-        suppars.link, detfn_id = detfn.id, trace =
-        as.numeric(trace), DBL_MIN = dbl.min, n = n, n_traps = n.traps, n_mask
-        = n.mask, A = A, capt_bin_unique = capt.bin.unique, capt_bin_freqs =
-        capt.bin.freqs, fit_angs = as.numeric(fit.bearings),
-        fit_dir = as.numeric(fit.dir), n_dir_quadpoints = n.dir.quadpoints,
-        fit_het_source = as.numeric(fit.het.source), het_source_gh =
-        as.numeric(het.source.gh), n_het_source_quadpoints =
-        n.het.source.quadpoints, het_source_nodes = het.source.nodes,
-        het_source_weights = het.source.weights, capt_ang = capt.bearing, fit_dists =
-        as.numeric(fit.dists), capt_dist = capt.dist, fit_ss = as.numeric(fit.ss),
-        cutoff = cutoff, first_calls = as.numeric(first.calls),
-        lower_cutoff = ifelse(is.null(lower.cutoff), 0, lower.cutoff),
-        linkfn_id = linkfn.id, capt_ss = capt.ss, fit_toas =
-        as.numeric(fit.toas), capt_toa = capt.toa, fit_mrds =
-        as.numeric(fit.mrds), mrds_dist = mrds.dist, dists = dists, angs =
-        bearings, toa_ssq = toa.ssq)
+    data.list <- list(n_unique = n.unique,
+                      local = as.numeric(local),
+                      all_n_local = all.n.local,
+                      all_which_local = all.which.local,
+                      n_Dpars = n.Dpars,
+                      Dpars_lb = Dpars.lb,
+                      Dpars_ub = Dpars.ub,
+                      Dpars_phase = Dpars.phase,
+                      Dpars_sf = Dpars.sf,
+                      n_detpars = n.detpars,
+                      detpars_lb = detpars.lb,
+                      detpars_ub = detpars.ub,
+                      detpars_phase = detpars.phase,
+                      detpars_sf = detpars.sf,
+                      detpars_linkfns = detpars.link,
+                      n_suppars = n.suppars,
+                      suppars_lb = suppars.lb,
+                      suppars_ub = suppars.ub,
+                      suppars_phase = suppars.phase,
+                      suppars_sf = suppars.sf,
+                      suppars_linkfns = suppars.link,
+                      detfn_id = detfn.id,
+                      trace = as.numeric(trace),
+                      DBL_MIN = dbl.min,
+                      n = n,
+                      n_traps = n.traps,
+                      n_mask = n.mask,
+                      A = A,
+                      capt_bin_unique = capt.bin.unique,
+                      capt_bin_freqs = capt.bin.freqs,
+                      fit_angs = as.numeric(fit.bearings),
+                      fit_dir = as.numeric(fit.dir),
+                      n_dir_quadpoints = n.dir.quadpoints,
+                      fit_het_source = as.numeric(fit.het.source),
+                      het_source_gh = as.numeric(het.source.gh),
+                      n_het_source_quadpoints = n.het.source.quadpoints,
+                      het_source_nodes = het.source.nodes,
+                      het_source_weights = het.source.weights,
+                      capt_ang = capt.bearing,
+                      fit_dists = as.numeric(fit.dists),
+                      capt_dist = capt.dist,
+                      fit_ss = as.numeric(fit.ss),
+                      cutoff = cutoff,
+                      first_calls = as.numeric(first.calls),
+                      lower_cutoff =
+                          ifelse(is.null(lower.cutoff), 0, lower.cutoff),
+                      linkfn_id = linkfn.id,
+                      capt_ss = capt.ss,
+                      fit_toas = as.numeric(fit.toas),
+                      capt_toa = capt.toa,
+                      fit_mrds = as.numeric(fit.mrds),
+                      mrds_dist = mrds.dist,
+                      dists = dists,
+                      angs = bearings,
+                      toa_ssq = toa.ssq,
+                      D_model_matrix = D.model.matrix)
+
     ## Determining whether or not standard errors should be calculated.
     if (!is.null(cue.rates)){
         fit.freqs <- any(cue.freqs != 1)
@@ -1045,7 +1096,7 @@ admbsecr <- function(capt, traps, mask, detfn = "hn", sv = NULL, bounds = NULL,
                       secr_nll, dat = data.list, get_esa = FALSE, method = "nmkb",
                       hessian = hess)
         out <- vector("list", 15)
-        names(out) <- c("fn", "coefficients", "coeflist", "se", "loglik", "maxgrad", 
+        names(out) <- c("fn", "coefficients", "coeflist", "se", "loglik", "maxgrad",
                         "cor", "vcov", "npar", "npar_re", "npar_sdrpt", "npar_rep",
                         "npar_total", "hes", "eratio")
         out$fn <- "optimx"

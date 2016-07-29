@@ -602,9 +602,9 @@ PROCEDURE_SECTION
             // Try saving sigma_toa separately.
             supp_contrib += (1 - sum(capt_hist))*log(suppars(sigma_toa_ind)) - (row((*toa_ssq_pointer), i)/(2*square(suppars(sigma_toa_ind))));
           }
-            f_ind = sum(mfexp(bincapt_contrib + supp_contrib));
+            f_ind = sum(mfexp(bincapt_contrib + supp_contrib + log(D_mask)));
         } else {
-            f_ind = sum(mfexp(bincapt_contrib));
+            f_ind = sum(mfexp(bincapt_contrib + log(D_mask)));
         }
         // For directional calling, save components due to each
         // direction for each individual.
@@ -628,7 +628,7 @@ PROCEDURE_SECTION
   // Contribution from n.
   f -= log_dpois(n, expected_n);
   // Extra bit that falls out of ll. CHANGE WITHOUT SUM_DET_PROBS; NOT SURE IF BELOW IS CORRECT (PROBABLY ISN'T)
-  f -= -n*log(sum(det_probs));
+  f -= -n*log(sum(elem_prod(D_mask, det_probs)));
   // Printing trace.
   if (trace){
     for (i = 1; i <= n_Dpars; i++){

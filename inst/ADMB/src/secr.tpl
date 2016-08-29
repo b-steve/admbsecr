@@ -5,10 +5,11 @@ DATA_SECTION
   init_ivector all_n_local(1,n_unique)
   init_matrix all_which_local(1,n_unique,1,all_n_local)
   // Density parameter details.
-  init_number D_lb
-  init_number D_ub
-  init_number D_phase
-  init_number D_sf
+  init_int n_Dpars
+  init_vector Dpars_lb(1,n_Dpars)
+  init_vector Dpars_ub(1,n_Dpars)
+  init_ivector Dpars_phase(1,n_Dpars)
+  init_vector Dpars_sf(1,n_Dpars)
   // Detection function parameter details.
   init_int n_detpars
   init_vector detpars_lb(1,n_detpars)
@@ -38,8 +39,10 @@ DATA_SECTION
   // Calculating total number of estimated parameters.
   int n_ests
   !! n_ests = 0;
-  !! if (D_phase > -1){
-  !!   n_ests++;
+  !! for (i = 1; i <= n_Dpars; i++){
+  !!   if (Dpars_phase(i) > -1){
+  !!     n_ests++;
+  !!   }
   !! }
   !! for (i = 1; i <= n_detpars; i++){
   !!   if (detpars_phase(i) > -1){
@@ -222,6 +225,8 @@ DATA_SECTION
   !! } else {
   !!   nr_localmats = n_traps;
   !! }
+  // Model matrix for density.
+  init_matrix D_model_matrix(1,n_mask,1,n_Dpars)
   number dir
   number bearing_to_trap
   number orientation
@@ -230,10 +235,11 @@ PARAMETER_SECTION
   objective_function_value f
   number f_ind
   vector fs(1,length_fs)
-  init_bounded_number D_link(D_lb,D_ub,D_phase)
+  // No link on detection function parameters for now.
+  init_bounded_number_vector Dpars(1,n_Dpars,Dpars_lb,Dpars_ub,Dpars_phase)
   init_bounded_number_vector detpars_link(1,n_detpars,detpars_lb,detpars_ub,detpars_phase)
   init_bounded_number_vector suppars_link(1,n_suppars,suppars_lb,suppars_ub,suppars_phase)
-  !! D_link.set_scalefactor(D_sf);
+  !! Dpars.set_scalefactor(Dpars_sf);
   !! detpars_link.set_scalefactor(detpars_sf);
   !! suppars_link.set_scalefactor(suppars_sf);
   sdreport_vector par_ests(1,n_ests)
@@ -241,7 +247,8 @@ PARAMETER_SECTION
   3darray log_capt_probs(1,n_dir_quadpoints,1,n_traps,1,n_mask)
   3darray log_evade_probs(1,n_dir_quadpoints,1,n_traps,1,n_mask)
   3darray expected_ss(1,n_dir_quadpoints,1,nr_expected_ss,1,nc_expected_ss)
-  number D
+  vector D_mask_link(1,n_mask)
+  vector D_mask(1,n_mask)
   number corr_ss
   number cond_corr_ss
   vector detpars(1,n_detpars)
@@ -249,7 +256,7 @@ PARAMETER_SECTION
   // Keep this here, otherwise get an error on Mac.
   vector capt_hist(1,n_traps)
   number det_prob
-  number sum_det_probs
+  vector det_probs(1,n_mask)
   number undet_prob
   // Probabilities of a call being undetected at the lower cutoff.
   number undet_lower_prob
@@ -259,16 +266,19 @@ PARAMETER_SECTION
   number point_evade
   number diag_sigma_ss
   number offdiag_sigma_ss
+  number expected_n
 
 PROCEDURE_SECTION
   // Grabbing detection function.
   detfn_pointer detfn = get_detfn(detfn_id);
   // Converting linked parameters to real parameters and setting up par_ests vector.
-  D = mfexp(D_link);
+  D_mask = mfexp(D_mask_link);
   j = 1;
-  if (D_phase > -1){
-    par_ests(j) = D;
-    j++;
+  for (i = 1; i <= n_Dpars; i++){
+    if (Dpars_phase(i) > -1){
+      par_ests(j) = Dpars(i);
+      j++;
+    }
   }
   // Converting parameters from their link scales.
   invlinkfn_pointer invlinkfn;
@@ -298,7 +308,6 @@ PROCEDURE_SECTION
   f = 0.0;
   fs = 0.0;
   // Calculating mask detection probabilities and expected signal strengths...
-  sum_det_probs = 0;
   // ... for a directional model...
   if (fit_dir){
     for (b = 1; b <= n_dir_quadpoints; b++){
@@ -326,7 +335,7 @@ PROCEDURE_SECTION
             if (linkfn_id == 3){
               expected_ss(b, j, i) = detpars(1) - 10*log10(square(dist)) - (detpars(2) - (detpars(3)*(cos(orientation) - 1.0)/2))*(dist - 1.0);
             } else {
-              expected_ss(b, j, i) = detpars(1) - (detpars(2) - (detpars(3)*(cos(orientation) - 1.0)/2))*dist;	      
+              expected_ss(b, j, i) = detpars(1) - (detpars(2) - (detpars(3)*(cos(orientation) - 1.0)/2))*dist;
               if (linkfn_id == 2){
                 expected_ss(b, j, i) = mfexp(expected_ss(b, j, i));
               }
@@ -334,7 +343,7 @@ PROCEDURE_SECTION
           }
         }
         point_capt = 1 - point_evade;
-        sum_det_probs += point_capt/n_dir_quadpoints;
+        det_probs(i) = point_capt/n_dir_quadpoints;
       }
     }
   // ... and a non-directional model.
@@ -351,7 +360,7 @@ PROCEDURE_SECTION
           if (linkfn_id == 2){
             mu_ss = mfexp(mu_ss);
           }
-        }  
+        }
         expected_ss(1).colfill(i, mu_ss);
         // For a model with heterogeneity in signal strengths.
         if (fit_het_source){
@@ -373,8 +382,8 @@ PROCEDURE_SECTION
         }
       }
       det_prob = 1 - undet_prob;
-      sum_det_probs += det_prob + DBL_MIN;
-    }  
+      det_probs(i) = det_prob;
+    }
   }
   // Contribution due to capture history.
   for (u = 1; u <= n_unique; u++){
@@ -593,9 +602,9 @@ PROCEDURE_SECTION
             // Try saving sigma_toa separately.
             supp_contrib += (1 - sum(capt_hist))*log(suppars(sigma_toa_ind)) - (row((*toa_ssq_pointer), i)/(2*square(suppars(sigma_toa_ind))));
           }
-            f_ind = sum(mfexp(bincapt_contrib + supp_contrib));
+            f_ind = sum(mfexp(bincapt_contrib + supp_contrib + log(D_mask)));
         } else {
-            f_ind = sum(mfexp(bincapt_contrib));
+            f_ind = sum(mfexp(bincapt_contrib + log(D_mask)));
         }
         // For directional calling, save components due to each
         // direction for each individual.
@@ -613,14 +622,18 @@ PROCEDURE_SECTION
     f -= sum(log(fs + DBL_MIN));
   }
   // Calculating ESA.
-  esa = A*(sum_det_probs);
+  esa = A*sum(det_probs);
+  // Calculating expected n.
+  expected_n = A*sum(elem_prod(D_mask, det_probs));
   // Contribution from n.
-  f -= log_dpois(n, D*esa);
-  // Extra bit that falls out of ll.
-  f -= -n*log(sum_det_probs);
+  f -= log_dpois(n, expected_n);
+  // Extra bit that falls out of ll. CHANGE WITHOUT SUM_DET_PROBS; NOT SURE IF BELOW IS CORRECT (PROBABLY ISN'T)
+  f -= -n*log(sum(elem_prod(D_mask, det_probs)));
   // Printing trace.
   if (trace){
-    cout << "D: " << D << ", ";
+    for (i = 1; i <= n_Dpars; i++){
+      cout << "D Par " << i << ": " << Dpars(i) << ", ";
+    }
     for (i = 1; i <= n_detpars; i++){
       cout << "DF Par " << i << ": " << detpars(i) << ", ";
     }

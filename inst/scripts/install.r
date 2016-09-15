@@ -1,3 +1,4 @@
+warning("The admbsecr package is deprecated; you're probably better off installing ascr. See https://github.com/b-steve/ascr.")
 pkgs <- c("CircStats", "fastGHQuad", "knitr", "matrixStats", "mvtnorm", "optimx", "plyr",
           "Rcpp", "R2admb", "secr", "testthat", "truncnorm", "xtable", "downloader")
 options(warn = -1)

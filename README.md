@@ -1,6 +1,6 @@
 # admbsecr
 
-**The admbsecr package is now deprecated.** It has been replaced by the [ascr](https://github.com/b-steve/ascr/) package; admbsecr version 1.2.3 is virtually identical to ascr version 2.0.0, but
+**The admbsecr package is now deprecated.** It has been replaced by the [ascr](https://github.com/b-steve/ascr/) package; admbsecr version 1.2.3 is virtually identical to ascr version 2.0.0, but the latter
 
 1. Has slightly improved documentation,
 
